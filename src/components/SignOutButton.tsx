@@ -1,64 +1,23 @@
-import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+"use client";
 
-export type ProfileStatus = "pending" | "approved" | "rejected";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 
-export type Profile = {
-  id: string;
-  email: string;
-  full_name: string | null;
-  status: ProfileStatus;
-  is_admin: boolean;
-  created_at: string;
-  updated_at: string;
-};
+export function SignOutButton() {
+  const router = useRouter();
 
-export async function getCurrentProfile() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
-  if (error || !user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  return { user, profile: profile as Profile | null };
-}
-
-export async function requireApprovedAccess() {
-  const session = await getCurrentProfile();
-
-  if (!session?.user) {
-    redirect("/login");
-  }
-
-  if (!session.profile) {
-    redirect("/register");
-  }
-
-  if (session.profile.status === "pending") {
-    redirect("/pending");
-  }
-
-  if (session.profile.status === "rejected") {
-    redirect("/login");
-  }
-
-  return session;
-}
-
-export async function requireAdminAccess() {
-  const session = await requireApprovedAccess();
-
-  if (!session.profile?.is_admin) {
-    redirect("/");
-  }
-
-  return session;
+  return (
+    <button
+      onClick={handleSignOut}
+      className="bg-gray-200 text-gray-800 px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-300"
+    >
+      Déconnexion
+    </button>
+  );
 }
