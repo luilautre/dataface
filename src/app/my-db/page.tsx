@@ -1,253 +1,170 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
-import { publicColumns, publicRows, type Column, type Row } from "@/lib/mockData";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
-const STORAGE_KEY = "dataface-personal-db";
-
-type PersonalDb = {
-  name: string;
-  columns: Column[];
-  rows: Row[];
-  linkedToPublic: boolean;
-  createdAt: string;
+type Profile = {
+  status: "pending" | "approved" | "rejected";
+  full_name: string | null;
 };
 
-export default function MyDbPage() {
-  const [db, setDb] = useState<PersonalDb | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [search, setSearch] = useState("");
+type Post = {
+  id: string;
+  content: string;
+  created_at: string;
+  profiles: { full_name: string | null } | null;
+};
+
+export default function HomePage() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [content, setContent] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadProfileAndPosts = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("status, full_name")
+      .eq("id", user.id)
+      .single();
+
+    if (!profileData) {
+      router.push("/register");
+      return;
+    }
+
+    if (profileData.status === "pending") {
+      router.push("/pending");
+      return;
+    }
+
+    if (profileData.status === "rejected") {
+      router.push("/login");
+      return;
+    }
+
+    setProfile(profileData);
+
+    const { data: postsData } = await supabase
+      .from("posts")
+      .select("id, content, created_at, profiles(full_name)")
+      .order("created_at", { ascending: false });
+
+    setPosts(postsData ?? []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setDb(JSON.parse(raw));
-    } catch {}
-  }, []);
+    loadProfileAndPosts();
+  }, [router]);
 
-  const save = (next: PersonalDb | null) => {
-    setDb(next);
-    if (next) localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    else localStorage.removeItem(STORAGE_KEY);
-  };
+  const handleCreatePost = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!content.trim()) return;
 
-  const createLinked = () => {
-    const personal: PersonalDb = {
-      name: newName || "Ma base personnelle",
-      columns: [
-        ...publicColumns,
-        { key: "notes", label: "Notes perso", type: "text" },
-        { key: "status", label: "Statut", type: "text" },
-      ],
-      rows: publicRows.map((r) => ({
-        ...r,
-        notes: "",
-        status: "À traiter",
-      })),
-      linkedToPublic: true,
-      createdAt: new Date().toISOString(),
-    };
-    save(personal);
-    setEditing(false);
-  };
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
 
-  const createEmpty = () => {
-    const personal: PersonalDb = {
-      name: newName || "Ma base vide",
-      columns: [
-        { key: "id", label: "ID", type: "number" },
-        { key: "name", label: "Nom", type: "text" },
-        { key: "value", label: "Valeur", type: "text" },
-      ],
-      rows: [],
-      linkedToPublic: false,
-      createdAt: new Date().toISOString(),
-    };
-    save(personal);
-    setEditing(false);
-  };
-
-  const updateCell = (rowIndex: number, key: string, value: string) => {
-    if (!db) return;
-    const nextRows = [...db.rows];
-    nextRows[rowIndex] = { ...nextRows[rowIndex], [key]: value };
-    save({ ...db, rows: nextRows });
-  };
-
-  const addRow = () => {
-    if (!db) return;
-    const maxId = db.rows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
-    const empty: Row = {};
-    db.columns.forEach((c) => {
-      empty[c.key] = c.key === "id" ? maxId + 1 : "";
+    const { error } = await supabase.from("posts").insert({
+      author_id: user.id,
+      content: content.trim(),
     });
-    save({ ...db, rows: [...db.rows, empty] });
+
+    if (!error) {
+      setContent("");
+      loadProfileAndPosts();
+    }
   };
 
-  const filtered = db
-    ? db.rows.filter((row) => {
-        if (!search) return true;
-        const q = search.toLowerCase();
-        return Object.values(row).some((v) => String(v).toLowerCase().includes(q));
-      })
-    : [];
-
-  if (!db) {
-    return (
-      <div className="py-8 max-w-xl mx-auto">
-        <div className="bg-white rounded-xl shadow p-6 space-y-6">
-          <div>
-            <h1 className="text-xl font-bold text-facebook-text">📁 Ma base de données</h1>
-            <p className="text-sm text-facebook-muted mt-2">
-              Créez votre propre base liée à la base publique (même structure + colonnes personnelles) 
-              ou une base vide. Les données sont sauvegardées localement dans votre navigateur.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-facebook-text mb-1">
-              Nom de la base
-            </label>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Ex: Mon CRM personnel"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-facebook-blue"
-            />
-          </div>
-
-          <div className="grid gap-3">
-            <button
-              onClick={createLinked}
-              className="w-full bg-facebook-blue text-white py-3 rounded-lg font-medium hover:bg-facebook-dark flex items-center justify-center gap-2"
-            >
-              🔗 Créer une base liée à la publique
-            </button>
-            <p className="text-xs text-facebook-muted text-center">
-              Copie la structure + les données de la base publique, ajoute des colonnes Notes et Statut.
-            </p>
-            <button
-              onClick={createEmpty}
-              className="w-full bg-gray-200 text-facebook-text py-3 rounded-lg font-medium hover:bg-gray-300"
-            >
-              Créer une base vide
-            </button>
-          </div>
-
-          <div className="text-center pt-2">
-            <Link href="/public-db" className="text-facebook-blue text-sm hover:underline">
-              Voir d&apos;abord la base publique →
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+  if (loading) {
+    return <div className="py-12 text-center text-facebook-muted">Chargement...</div>;
   }
 
   return (
-    <div className="py-4 space-y-4">
-      <div className="bg-white rounded-xl shadow p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-facebook-text">📁 {db.name}</h1>
-            <p className="text-sm text-facebook-muted mt-1">
-              {db.linkedToPublic ? (
-                <>
-                  Liée à la{" "}
-                  <Link href="/public-db" className="text-facebook-blue underline">
-                    base publique
-                  </Link>{" "}
-                  · Créée le {new Date(db.createdAt).toLocaleDateString("fr-FR")}
-                </>
-              ) : (
-                <>Base indépendante · Créée le {new Date(db.createdAt).toLocaleDateString("fr-FR")}</>
-              )}
-            </p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <input
-              type="text"
-              placeholder="Rechercher..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-facebook-blue"
-            />
-            <button
-              onClick={addRow}
-              className="bg-facebook-blue text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-facebook-dark"
-            >
-              + Ligne
-            </button>
-            <button
-              onClick={() => {
-                if (confirm("Supprimer définitivement cette base ?")) save(null);
-              }}
-              className="bg-red-100 text-red-700 px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-200"
-            >
-              Supprimer
-            </button>
-          </div>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 py-4">
+      <aside className="hidden lg:block lg:col-span-3 space-y-3">
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-facebook-text mb-3">Raccourcis</h2>
+          <ul className="space-y-2 text-sm">
+            <li>
+              <Link href="/public-db" className="flex items-center gap-2 text-facebook-muted hover:text-facebook-blue">
+                📊 Base de données publique
+              </Link>
+            </li>
+            <li>
+              <Link href="/my-db" className="flex items-center gap-2 text-facebook-muted hover:text-facebook-blue">
+                📁 Ma base personnelle
+              </Link>
+            </li>
+          </ul>
         </div>
-      </div>
+      </aside>
 
-      <div className="bg-white rounded-xl shadow overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-facebook-gray border-b border-gray-200">
-                {db.columns.map((col) => (
-                  <th
-                    key={col.key}
-                    className="px-3 py-3 text-left font-semibold text-facebook-text whitespace-nowrap"
-                  >
-                    {col.label}
-                    {(col.key === "notes" || col.key === "status") && (
-                      <span className="ml-1 text-xs text-facebook-blue">(perso)</span>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((row, rowIndex) => {
-                const realIndex = db.rows.indexOf(row);
-                return (
-                  <tr
-                    key={rowIndex}
-                    className={`border-b border-gray-100 ${
-                      rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"
-                    }`}
-                  >
-                    {db.columns.map((col) => (
-                      <td key={col.key} className="px-2 py-1">
-                        {col.key === "notes" || col.key === "status" || !db.linkedToPublic ? (
-                          <input
-                            type="text"
-                            value={String(row[col.key] ?? "")}
-                            onChange={(e) => updateCell(realIndex, col.key, e.target.value)}
-                            className="w-full min-w-[100px] px-2 py-1.5 border border-transparent hover:border-gray-300 focus:border-facebook-blue rounded outline-none bg-transparent"
-                          />
-                        ) : (
-                          <span className="px-2 py-1.5 block text-facebook-text">
-                            {String(row[col.key] ?? "")}
-                          </span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <section className="lg:col-span-6 space-y-4">
+        <div className="bg-white rounded-xl shadow p-4">
+          <form onSubmit={handleCreatePost} className="space-y-3">
+            <div className="flex gap-3 items-center">
+              <div className="w-10 h-10 rounded-full bg-facebook-blue text-white flex items-center justify-center font-semibold">
+                {profile?.full_name?.[0]?.toUpperCase() || "U"}
+              </div>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={3}
+                placeholder="Quoi de neuf ?"
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-facebook-blue resize-none"
+              />
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="bg-facebook-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-facebook-dark"
+              >
+                Publier
+              </button>
+            </div>
+          </form>
         </div>
-        <div className="px-4 py-3 border-t border-gray-100 text-sm text-facebook-muted flex justify-between">
-          <span>{filtered.length} ligne(s)</span>
-          <span>Modifications sauvegardées automatiquement (localStorage)</span>
+
+        {posts.map((post) => (
+          <article key={post.id} className="bg-white rounded-xl shadow p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-facebook-blue text-white flex items-center justify-center font-semibold">
+                {(post.profiles?.full_name ?? "U").charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="font-semibold text-facebook-text">{post.profiles?.full_name || "Utilisateur"}</p>
+                <p className="text-xs text-facebook-muted">
+                  {new Date(post.created_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+              </div>
+            </div>
+            <p className="text-facebook-text whitespace-pre-wrap">{post.content}</p>
+          </article>
+        ))}
+      </section>
+
+      <aside className="hidden lg:block lg:col-span-3 space-y-3">
+        <div className="bg-white rounded-xl shadow p-4">
+          <h2 className="font-semibold text-facebook-text mb-2">Compte</h2>
+          <p className="text-sm text-facebook-muted">Statut : validé</p>
+          <p className="text-sm text-facebook-muted">Bienvenue {profile?.full_name || "utilisateur"}</p>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
