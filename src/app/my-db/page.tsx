@@ -14,7 +14,7 @@ type Post = {
   id: string;
   content: string;
   created_at: string;
-  profiles: { full_name: string | null } | null;
+  profiles: { full_name: string | null }[] | null;
 };
 
 export default function HomePage() {
@@ -62,7 +62,7 @@ export default function HomePage() {
       .select("id, content, created_at, profiles(full_name)")
       .order("created_at", { ascending: false });
 
-    setPosts(postsData ?? []);
+    setPosts((postsData ?? []) as Post[]);
     setLoading(false);
   };
 
@@ -140,22 +140,25 @@ export default function HomePage() {
           </form>
         </div>
 
-        {posts.map((post) => (
-          <article key={post.id} className="bg-white rounded-xl shadow p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-facebook-blue text-white flex items-center justify-center font-semibold">
-                {(post.profiles?.full_name ?? "U").charAt(0).toUpperCase()}
+        {posts.map((post) => {
+          const author = post.profiles?.[0];
+          return (
+            <article key={post.id} className="bg-white rounded-xl shadow p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-facebook-blue text-white flex items-center justify-center font-semibold">
+                  {(author?.full_name ?? "U").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-semibold text-facebook-text">{author?.full_name || "Utilisateur"}</p>
+                  <p className="text-xs text-facebook-muted">
+                    {new Date(post.created_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-facebook-text">{post.profiles?.full_name || "Utilisateur"}</p>
-                <p className="text-xs text-facebook-muted">
-                  {new Date(post.created_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
-                </p>
-              </div>
-            </div>
-            <p className="text-facebook-text whitespace-pre-wrap">{post.content}</p>
-          </article>
-        ))}
+              <p className="text-facebook-text whitespace-pre-wrap">{post.content}</p>
+            </article>
+          );
+        })}
       </section>
 
       <aside className="hidden lg:block lg:col-span-3 space-y-3">
