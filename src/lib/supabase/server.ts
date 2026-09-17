@@ -1,5 +1,5 @@
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/supabase-js";
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -11,12 +11,12 @@ export async function createSupabaseServerClient() {
     throw new Error("Missing Supabase environment variables");
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
         try {
           for (const cookie of cookiesToSet) {
             cookieStore.set(cookie.name, cookie.value, cookie.options);
