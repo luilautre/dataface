@@ -3,18 +3,14 @@ import { cookies } from "next/headers";
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
-
   const supabaseUrl =
-    process.env.NEXT_PUBLIC_SUPABASE_URL ??
-    process.env.SUPABASE_URL ??
-    "https://example.supabase.co";
-
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const supabaseAnonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
     process.env.SUPABASE_ANON_KEY ??
-    "placeholder-key";
+    process.env.SUPABASE_PUBLISHABLE_KEY;
 
-  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === "https://example.supabase.co" || supabaseAnonKey === "placeholder-key") {
+  if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error("Missing Supabase environment variables");
   }
 
@@ -23,13 +19,19 @@ export async function createSupabaseServerClient() {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet: Array<{ name: string; value: string; options?: CookieOptions }>) {
+      setAll(
+        cookiesToSet: Array<{
+          name: string;
+          value: string;
+          options?: CookieOptions;
+        }>,
+      ) {
         try {
           for (const cookie of cookiesToSet) {
             cookieStore.set(cookie.name, cookie.value, cookie.options);
           }
         } catch {
-          // ignore if headers are already sent
+          // Les Server Components ne peuvent pas toujours écrire les cookies.
         }
       },
     },
